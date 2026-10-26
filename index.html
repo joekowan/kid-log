@@ -146,7 +146,9 @@
 // No names or key live in this public file: the family key arrives in the link's #k=… part
 // (never sent to GitHub) and unlocks the names and entries from the Apps Script API.
 const API = 'https://script.google.com/macros/s/AKfycbyeuuBHGADfrDJLA0vCVQCF082IjUMTCtUtHdQJb8WxLogXW4WoMH4SGsHPvSaL_9LNAA/exec';
-const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || store('key');
+// Accept the key from #k= or ?k= (iOS can drop the #part when saving to the Home Screen), else from storage.
+const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || new URLSearchParams(location.search).get('k')
+  || store('key');
 let CFG = { kids: [], loggers: [] };
 
 const OPTIONS = {
@@ -480,7 +482,7 @@ async function refresh() {
 }
 
 async function boot() {
-  if (!KEY) { locked('This link is missing its family key. Ask whoever shared Kid Log with you for the full link.'); return; }
+  if (!KEY) { locked('This link is missing its family key. Type the key from the full link (the part after k=), or ask whoever shared Kid Log with you.'); return; }
   try { CFG = await call('config'); }
   catch (e) {
     locked(e.message === 'bad key' ? 'This family key doesn’t work. Ask for the current link.'
@@ -488,6 +490,8 @@ async function boot() {
     return;
   }
   store('key', KEY);
+  // Put the key in the address so Add to Home Screen saves a link that keeps working.
+  if (new URLSearchParams(location.search).get('k') !== KEY) history.replaceState(null, '', '?k=' + KEY);
   renderWho();
   renderGrid();
   if (!who) pickWho();
@@ -497,7 +501,13 @@ function locked(msg) {
   document.querySelector('.tabs').style.display = 'none';
   document.getElementById('whoBtn').style.display = 'none';
   document.getElementById('viewLog').innerHTML = '';
-  document.getElementById('viewLog').append(el('div', { class: 'card' }, msg));
+  const inp = el('input', { type: 'text', placeholder: 'Family key', autocapitalize: 'off', autocomplete: 'off',
+    spellcheck: 'false', style: 'width:100%;font:inherit;padding:12px;margin-top:12px;border-radius:12px;' +
+      'border:1px solid var(--line);background:var(--bg);color:var(--ink)' });
+  const go = () => { const k = inp.value.trim().replace(/^.*k=/, ''); if (k) location.href = location.pathname + '?k=' + encodeURIComponent(k); };
+  inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  document.getElementById('viewLog').append(el('div', { class: 'card' }, msg, inp,
+    el('button', { class: 'save good', style: 'margin-top:12px', onclick: go }, 'Open Kid Log')));
 }
 window.addEventListener('hashchange', () => location.reload());
 boot();
