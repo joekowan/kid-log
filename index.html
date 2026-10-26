@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Kid Log">
+<meta name="theme-color" content="#f6f4ef">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>Kid Log</title>
+<style>
+  :root {
+    --bg: #f6f4ef; --card: #ffffff; --ink: #1f2328; --muted: #6b6f76; --line: #e4e0d8;
+    --good: #2f7d62; --good-soft: #e3f1ea; --hard: #b5562f; --hard-soft: #f8e7dd;
+    --chip: #efece6; --chip-on: #1f2328; --chip-on-ink: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141517; --card: #1e2023; --ink: #eceae6; --muted: #9a9ea5; --line: #2e3135;
+      --good: #5cc29b; --good-soft: #1b2e27; --hard: #ee8f63; --hard-soft: #35231b;
+      --chip: #2a2c30; --chip-on: #eceae6; --chip-on-ink: #141517;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  body { padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 24px); max-width: 560px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 10px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 22px 0 8px; }
+  h3 { font-size: 14px; margin: 16px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  .who { background: var(--chip); padding: 6px 12px; border-radius: 999px; font-size: 14px; color: var(--muted); }
+  .tabs { display: flex; background: var(--chip); border-radius: 12px; padding: 3px; margin-bottom: 14px; }
+  .tabs button { flex: 1; padding: 8px; border-radius: 10px; font-weight: 600; color: var(--muted); }
+  .tabs button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .big { border-radius: 18px; padding: 20px 14px; min-height: 120px; text-align: left; display: flex;
+    flex-direction: column; justify-content: space-between; }
+  .big .kid { font-size: 24px; font-weight: 700; }
+  .big .lbl { font-size: 15px; font-weight: 600; }
+  .big.good { background: var(--good-soft); color: var(--good); }
+  .big.hard { background: var(--hard-soft); color: var(--hard); }
+  .big:active { transform: scale(.97); }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
+  .list { background: var(--card); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); align-items: flex-start; }
+  .row:first-child { border-top: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; }
+  .dot.good { background: var(--good); } .dot.hard { background: var(--hard); }
+  .row .main { flex: 1; min-width: 0; }
+  .row .t { font-weight: 600; }
+  .row .s { color: var(--muted); font-size: 14px; }
+  .row .x { color: var(--muted); font-size: 13px; padding: 2px 4px; }
+  .empty { color: var(--muted); padding: 16px 14px; }
+
+  /* detail sheet */
+  .sheet { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 10;
+    padding: calc(env(safe-area-inset-top) + 8px) 16px 120px; display: none; }
+  .sheet.open { display: block; }
+  .sheet-in { max-width: 560px; margin: 0 auto; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+  .sheet-head .title { font-size: 20px; font-weight: 700; }
+  .sheet-head .title.good { color: var(--good); } .sheet-head .title.hard { color: var(--hard); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--chip); padding: 9px 13px; border-radius: 999px; font-size: 15px; }
+  .chip.on { background: var(--chip-on); color: var(--chip-on-ink); }
+  textarea, input[type=time] { width: 100%; font: inherit; color: var(--ink); background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  textarea { min-height: 96px; resize: vertical; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
+    background: linear-gradient(transparent, var(--bg) 30%); z-index: 11; display: none; }
+  .bar.open { display: block; }
+  .save { display: block; width: 100%; max-width: 528px; margin: 0 auto; padding: 16px; border-radius: 14px;
+    font-size: 18px; font-weight: 700; color: #fff; }
+  .save.good { background: var(--good); } .save.hard { background: var(--hard); }
+  .save:disabled { opacity: .6; }
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 12px; display: none;
+    gap: 16px; align-items: center; z-index: 20; white-space: nowrap; }
+  .toast.show { display: flex; }
+  .toast button { color: var(--bg); font-weight: 700; text-decoration: underline; }
+
+  /* summary */
+  .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .stats { display: flex; gap: 10px; }
+  .stat { flex: 1; border-radius: 12px; padding: 10px; }
+  .stat b { display: block; font-size: 26px; line-height: 1.1; }
+  .stat.good { background: var(--good-soft); color: var(--good); }
+  .stat.hard { background: var(--hard-soft); color: var(--hard); }
+  .days { display: flex; align-items: flex-end; gap: 4px; height: 70px; margin-top: 6px; }
+  .day { flex: 1; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; }
+  .day i { display: block; border-radius: 3px; }
+  .day i.g { background: var(--good); } .day i.h { background: var(--hard); }
+  .daylbl { display: flex; gap: 4px; font-size: 11px; color: var(--muted); }
+  .daylbl span { flex: 1; text-align: center; }
+  .tally { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
+  .tally span:last-child { color: var(--muted); }
+  .ev { padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .ev:first-child { border-top: 0; }
+  .ev .s { color: var(--muted); font-size: 13px; }
+  .copy { width: 100%; padding: 14px; border-radius: 12px; background: var(--chip); font-weight: 600; }
+  #copyText { margin-top: 10px; display: none; min-height: 200px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kid Log</h1>
+  <button class="who" id="whoBtn" onclick="pickWho()">…</button>
+</header>
+<div class="tabs">
+  <button id="tabLog" class="on" onclick="showTab('log')">Log</button>
+  <button id="tabSum" onclick="showTab('sum')">Summary</button>
+</div>
+
+<section id="viewLog">
+  <div class="grid" id="grid"></div>
+  <p class="hint">Tap once, then Save. Everything else is optional. To talk instead of type, tap the 🎤 on the keyboard.</p>
+  <h2>Today</h2>
+  <div class="list" id="today"><div class="empty">Loading…</div></div>
+</section>
+
+<section id="viewSum" style="display:none">
+  <div class="chips" id="range" style="margin-bottom:14px"></div>
+  <div id="summary"></div>
+  <button class="copy" onclick="copySummary()">Copy summary text for therapist</button>
+  <textarea id="copyText" readonly></textarea>
+</section>
+
+<div class="sheet" id="sheet"><div class="sheet-in">
+  <div class="sheet-head">
+    <span class="title" id="sheetTitle"></span>
+    <button onclick="closeSheet()" style="color:var(--muted)">Cancel</button>
+  </div>
+  <div id="form"></div>
+</div></div>
+<div class="bar" id="bar"><button class="save" id="saveBtn" onclick="save()">Save</button></div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
+
+<script>
+// No names or key live in this public file: the family key arrives in the link's #k=… part
+// (never sent to GitHub) and unlocks the names and entries from the Apps Script API.
+const API = 'https://script.google.com/macros/s/AKfycbyeuuBHGADfrDJLA0vCVQCF082IjUMTCtUtHdQJb8WxLogXW4WoMH4SGsHPvSaL_9LNAA/exec';
+const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || store('key');
+let CFG = { kids: [], loggers: [] };
+
+const OPTIONS = {
+  when: ['Now', '15 min ago', '30 min ago', '1 hr ago', '2 hrs ago', 'Pick time'],
+  good: {
+    what: ['Kind to sibling', 'Followed directions', 'Used a coping skill', 'Calm through a transition',
+      'Handled "no" well', 'Helped out', 'Honest / owned it', 'Played well with others', 'Connected / good talk', 'Other'],
+    response: ['Praised it', 'Reward / points', 'Quality time', 'Just noticed it'],
+    responseLabel: 'How we responded',
+  },
+  hard: {
+    what: ['Meltdown / tantrum', 'Aggression (hit, kick, throw)', 'Refused / defiant', 'Yelling / mean words',
+      'Sibling conflict', 'Anxious / worried', 'Shut down / withdrawn', 'Unsafe behavior', 'Lying', 'Other'],
+    intensity: ['Mild', 'Moderate', 'Severe'],
+    duration: ['Under 5 min', '5–15 min', '15–30 min', '30+ min'],
+    triggers: ['Transition', 'Told "no"', 'Sibling', 'Screens ending', 'Homework', 'Morning routine',
+      'Bedtime', 'Hungry / tired', 'Unknown'],
+    response: ['Coping skill', 'Break / space', 'Co-regulation / hug', 'Redirection', 'Ignored behavior',
+      'Consequence', 'Praise once calm', 'Nothing helped'],
+    responseLabel: 'What we did / what helped',
+  },
+};
+
+let who = store('who');
+let draft = null;
+let range = 7;
+let cache = [];
+
+// ---------- helpers ----------
+function store(k, v) {
+  try { if (v === undefined) return localStorage.getItem('kidlog.' + k); localStorage.setItem('kidlog.' + k, v); } catch (e) {}
+  return null;
+}
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'onclick') n.onclick = v; else if (k === 'class') n.className = v; else n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) n.append(c);
+  return n;
+}
+function call(fn, ...args) {
+  const get = params => fetch(API + '?' + new URLSearchParams(Object.assign({ k: KEY }, params)));
+  const post = body => fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ k: KEY }, body)) });
+  const req = { config: () => get({ action: 'config' }), getEntries: days => get({ action: 'entries', days }),
+    logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }) }[fn](...args);
+  return req.then(r => r.json()).then(d => {
+    if (d && d.error) throw new Error(d.error);
+    return fn === 'logEvent' ? d.id : fn === 'deleteEvent' ? d.ok : d;
+  });
+}
+function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtDay(iso) { return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' }); }
+function dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+function label(e) { return e.type === 'good' ? 'Good moment' : 'Hard moment'; }
+let toastTimer;
+function toast(msg, undo) {
+  document.getElementById('toastMsg').textContent = msg;
+  const u = document.getElementById('toastUndo');
+  u.style.display = undo ? '' : 'none';
+  u.onclick = () => { document.getElementById('toast').classList.remove('show'); undo && undo(); };
+  document.getElementById('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => document.getElementById('toast').classList.remove('show'), 6000);
+}
+
+// ---------- who ----------
+function pickWho() {
+  const box = el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, 'Who is logging on this phone?'),
+    el('div', { class: 'chips' }, CFG.loggers.map(n => el('button', { class: 'chip' + (n === who ? ' on' : ''),
+      onclick: () => { who = n; store('who', n); renderWho(); document.getElementById('whoCard').remove(); } }, n))));
+  box.id = 'whoCard';
+  const old = document.getElementById('whoCard'); if (old) old.remove();
+  document.getElementById('viewLog').prepend(box);
+  showTab('log');
+}
+function renderWho() { document.getElementById('whoBtn').textContent = who ? 'as ' + who + ' ▾' : 'Who are you? ▾'; }
+
+// ---------- log ----------
+function renderGrid() {
+  const g = document.getElementById('grid');
+  g.innerHTML = '';
+  for (const kid of CFG.kids) {
+    for (const type of ['good', 'hard']) {
+      g.append(el('button', { class: 'big ' + type, onclick: () => openSheet(kid, type) },
+        el('span', { class: 'kid' }, kid),
+        el('span', { class: 'lbl' }, type === 'good' ? '👍 Good moment' : '⚡ Hard moment')));
+    }
+  }
+}
+
+function openSheet(child, type) {
+  draft = { child, type, when: 'Now', what: [], triggers: [], response: [], intensity: '', duration: '', notes: '', time: '' };
+  const t = document.getElementById('sheetTitle');
+  t.textContent = child + ' · ' + (type === 'good' ? 'Good moment' : 'Hard moment');
+  t.className = 'title ' + type;
+  document.getElementById('saveBtn').className = 'save ' + type;
+  document.getElementById('saveBtn').textContent = 'Save';
+  document.getElementById('saveBtn').disabled = false;
+  renderForm();
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('bar').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
+}
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+  document.getElementById('bar').classList.remove('open');
+  draft = null;
+}
+
+function chipGroup(title, field, opts, multi) {
+  return [el('h3', {}, title), el('div', { class: 'chips' }, opts.map(o => {
+    const on = multi ? draft[field].includes(o) : draft[field] === o;
+    return el('button', { class: 'chip' + (on ? ' on' : ''), onclick: () => {
+      if (multi) draft[field] = on ? draft[field].filter(x => x !== o) : draft[field].concat(o);
+      else draft[field] = on && field !== 'when' ? '' : o;
+      renderForm();
+    } }, o);
+  }))];
+}
+
+function renderForm() {
+  const o = OPTIONS[draft.type];
+  const f = document.getElementById('form');
+  const notes = draft.notes;
+  f.innerHTML = '';
+  f.append(...chipGroup('When', 'when', OPTIONS.when, false));
+  if (draft.when === 'Pick time') {
+    const inp = el('input', { type: 'time', value: draft.time, style: 'margin-top:8px' });
+    inp.oninput = () => { draft.time = inp.value; };
+    f.append(inp);
+  }
+  f.append(...chipGroup('What happened', 'what', o.what, true));
+  const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)' });
+  ta.value = notes;
+  ta.oninput = () => { draft.notes = ta.value; };
+  f.append(el('h3', {}, 'Notes'), ta);
+  if (draft.type === 'hard') {
+    f.append(...chipGroup('How big', 'intensity', o.intensity, false));
+    f.append(...chipGroup('How long', 'duration', o.duration, false));
+    f.append(...chipGroup('What set it off', 'triggers', o.triggers, true));
+  }
+  f.append(...chipGroup(o.responseLabel, 'response', o.response, true));
+}
+
+function happenedAt() {
+  const now = new Date();
+  const mins = { 'Now': 0, '15 min ago': 15, '30 min ago': 30, '1 hr ago': 60, '2 hrs ago': 120 }[draft.when];
+  if (mins !== undefined) return new Date(now - mins * 60000);
+  if (!draft.time) return now;
+  const [h, m] = draft.time.split(':').map(Number);
+  const d = new Date(now); d.setHours(h, m, 0, 0);
+  if (d > now) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+async function save() {
+  if (!draft) return;
+  if (!who) { pickWho(); closeSheet(); toast('Pick who you are first'); return; }
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const ev = { child: draft.child, type: draft.type, happenedAt: happenedAt().toISOString(), what: draft.what,
+    intensity: draft.intensity, duration: draft.duration, triggers: draft.triggers, response: draft.response,
+    notes: draft.notes.trim(), by: who };
+  try {
+    const id = await call('logEvent', ev);
+    closeSheet();
+    cache.unshift(Object.assign({ id, loggedAt: new Date().toISOString() }, ev));
+    cache.sort((a, b) => b.happenedAt.localeCompare(a.happenedAt));
+    renderToday();
+    toast('Saved ' + ev.child + ' · ' + label(ev), () => remove(id));
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Didn’t save. Tap to try again';
+  }
+}
+
+async function remove(id) {
+  try {
+    await call('deleteEvent', id);
+    cache = cache.filter(e => e.id !== id);
+    renderToday(); renderSummary();
+    toast('Removed');
+  } catch (e) { toast('Couldn’t remove. Try again'); }
+}
+
+function summaryLine(e) {
+  return [e.what.join(', '), e.intensity, e.duration, e.triggers.length ? 'trigger: ' + e.triggers.join(', ') : '',
+    e.response.length ? (e.type === 'good' ? 'we: ' : 'helped/tried: ') + e.response.join(', ') : '']
+    .filter(Boolean).join(' · ');
+}
+
+function renderToday() {
+  const box = document.getElementById('today');
+  const today = dayKey(new Date());
+  const items = cache.filter(e => dayKey(new Date(e.happenedAt)) === today);
+  box.innerHTML = '';
+  if (!items.length) { box.append(el('div', { class: 'empty' }, 'Nothing logged yet today.')); return; }
+  for (const e of items) {
+    box.append(el('div', { class: 'row' }, el('span', { class: 'dot ' + e.type }),
+      el('div', { class: 'main' },
+        el('div', { class: 't' }, e.child + ' · ' + label(e) + ' · ' + fmtTime(e.happenedAt)),
+        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
+        e.notes ? el('div', { class: 's' }, '“' + e.notes + '”') : null,
+        el('div', { class: 's' }, 'by ' + e.by)),
+      el('button', { class: 'x', onclick: ev => {
+        // confirm() is blocked in the Apps Script sandbox, so the second tap confirms.
+        const b = ev.currentTarget;
+        if (b.dataset.armed) { b.textContent = 'Removing…'; remove(e.id); return; }
+        b.dataset.armed = '1'; b.textContent = 'Tap to confirm'; b.style.color = 'var(--hard)';
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Remove'; b.style.color = ''; } }, 4000);
+      } }, 'Remove')));
+  }
+}
+
+// ---------- summary ----------
+function tally(list, field) {
+  const c = {};
+  for (const e of list) for (const v of [].concat(e[field] || [])) if (v) c[v] = (c[v] || 0) + 1;
+  return Object.entries(c).sort((a, b) => b[1] - a[1]);
+}
+function partOfDay(iso) {
+  const h = new Date(iso).getHours();
+  return h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : h < 20 ? 'Evening' : 'Bedtime / night';
+}
+function inRange() {
+  const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - (range - 1));
+  return cache.filter(e => new Date(e.happenedAt) >= cutoff);
+}
+
+function renderSummary() {
+  const r = document.getElementById('range');
+  r.innerHTML = '';
+  for (const [n, txt] of [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']]) {
+    r.append(el('button', { class: 'chip' + (range === n ? ' on' : ''), onclick: () => { range = n; renderSummary(); } }, txt));
+  }
+  const s = document.getElementById('summary');
+  s.innerHTML = '';
+  const list = inRange();
+  for (const kid of CFG.kids) {
+    const mine = list.filter(e => e.child === kid);
+    const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
+    const card = el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, kid),
+      el('div', { class: 'stats' },
+        el('div', { class: 'stat good' }, el('b', {}, String(good.length)), 'good moments'),
+        el('div', { class: 'stat hard' }, el('b', {}, String(hard.length)), 'hard moments')));
+    if (range > 1) {
+      const days = [];
+      for (let i = range - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+      const max = Math.max(1, ...days.map(d => mine.filter(e => dayKey(new Date(e.happenedAt)) === dayKey(d)).length));
+      card.append(el('h3', {}, 'By day'), el('div', { class: 'days' }, days.map(d => {
+        const k = dayKey(d);
+        const g = good.filter(e => dayKey(new Date(e.happenedAt)) === k).length;
+        const h = hard.filter(e => dayKey(new Date(e.happenedAt)) === k).length;
+        return el('div', { class: 'day', title: g + ' good, ' + h + ' hard' },
+          g ? el('i', { class: 'g', style: 'height:' + (g / max * 100) + '%' }) : null,
+          h ? el('i', { class: 'h', style: 'height:' + (h / max * 100) + '%' }) : null);
+      })), el('div', { class: 'daylbl' }, days.map(d => el('span', {}, range > 7
+        ? String(d.getDate()) : d.toLocaleDateString([], { weekday: 'narrow' })))));
+    }
+    const sec = (title, rows) => rows.length ? [el('h3', {}, title),
+      ...rows.slice(0, 6).map(([k, v]) => el('div', { class: 'tally' }, el('span', {}, k), el('span', {}, '×' + v)))] : [];
+    card.append(...sec('Hard moments: what happened', tally(hard, 'what')));
+    card.append(...sec('Hard moments: what set it off', tally(hard, 'triggers')));
+    card.append(...sec('Hard moments: what helped / what we tried', tally(hard, 'response')));
+    card.append(...sec('Hard moments: time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p')));
+    card.append(...sec('Good moments', tally(good, 'what')));
+    const withNotes = mine.filter(e => e.notes || e.type === 'hard');
+    if (withNotes.length) {
+      card.append(el('h3', {}, 'Details'), ...withNotes.slice(0, 25).map(e => el('div', { class: 'ev' },
+        el('div', {}, el('span', { class: 'dot ' + e.type, style: 'display:inline-block;margin:0 6px 0 0' }),
+          (e.type === 'good' ? 'Good' : 'Hard') + ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
+        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
+        e.notes ? el('div', {}, '“' + e.notes + '”') : null)));
+    }
+    if (!mine.length) card.append(el('p', { class: 'empty', style: 'padding:12px 0 0' }, 'Nothing logged in this range.'));
+    s.append(card);
+  }
+}
+
+function summaryText() {
+  const list = inRange();
+  const start = new Date(); start.setDate(start.getDate() - (range - 1));
+  const out = [];
+  for (const kid of CFG.kids) {
+    const mine = list.filter(e => e.child === kid).slice().reverse();
+    const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
+    out.push(kid.toUpperCase() + ': home log, ' + fmtDay(start.toISOString()) + ' to ' + fmtDay(new Date().toISOString()));
+    out.push(good.length + ' good moments, ' + hard.length + ' hard moments logged.');
+    const line = (t, rows) => rows.length && out.push(t + ': ' + rows.slice(0, 5).map(([k, v]) => k + ' (' + v + ')').join(', '));
+    line('Hard moments were mostly', tally(hard, 'what'));
+    line('Common triggers', tally(hard, 'triggers'));
+    line('What helped / what we tried', tally(hard, 'response'));
+    line('Time of day (hard)', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p'));
+    line('Good moments', tally(good, 'what'));
+    if (mine.length) out.push('', 'Log:');
+    for (const e of mine) {
+      out.push('- ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt) + ' · ' + (e.type === 'good' ? 'GOOD' : 'HARD') +
+        (summaryLine(e) ? ' · ' + summaryLine(e) : '') + (e.notes ? ' · "' + e.notes + '"' : ''));
+    }
+    out.push('', '');
+  }
+  return out.join('\n').trim();
+}
+
+async function copySummary() {
+  const text = summaryText();
+  const ta = document.getElementById('copyText');
+  ta.value = text; ta.style.display = 'block';
+  try { await navigator.clipboard.writeText(text); toast('Copied. Paste into a text or email'); }
+  catch (e) { ta.focus(); ta.select(); toast('Press and hold the text, then Copy'); }
+}
+
+// ---------- tabs / boot ----------
+function showTab(t) {
+  document.getElementById('viewLog').style.display = t === 'log' ? '' : 'none';
+  document.getElementById('viewSum').style.display = t === 'sum' ? '' : 'none';
+  document.getElementById('tabLog').className = t === 'log' ? 'on' : '';
+  document.getElementById('tabSum').className = t === 'sum' ? 'on' : '';
+  if (t === 'sum') { renderSummary(); refresh(); }
+}
+
+async function refresh() {
+  try {
+    cache = await call('getEntries', 14);
+    renderToday();
+    if (document.getElementById('viewSum').style.display !== 'none') renderSummary();
+  } catch (e) {
+    document.getElementById('today').innerHTML = '<div class="empty">Couldn’t load the log. Check your connection.</div>';
+  }
+}
+
+async function boot() {
+  if (!KEY) { locked('This link is missing its family key. Ask whoever shared Kid Log with you for the full link.'); return; }
+  try { CFG = await call('config'); }
+  catch (e) {
+    locked(e.message === 'bad key' ? 'This family key doesn’t work. Ask for the current link.'
+      : 'Couldn’t reach Kid Log. Check your connection, then reopen the app.');
+    return;
+  }
+  store('key', KEY);
+  renderWho();
+  renderGrid();
+  if (!who) pickWho();
+  refresh();
+}
+function locked(msg) {
+  document.querySelector('.tabs').style.display = 'none';
+  document.getElementById('whoBtn').style.display = 'none';
+  document.getElementById('viewLog').innerHTML = '';
+  document.getElementById('viewLog').append(el('div', { class: 'card' }, msg));
+}
+window.addEventListener('hashchange', () => location.reload());
+boot();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
