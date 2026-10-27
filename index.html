@@ -452,6 +452,8 @@ function summaryText(kid) {
     if (!items.length) return;
     out.push('', title.toUpperCase());
     for (const e of items) {
+      // Prefer the Event Summary cell (written by Claude, editable in the Sheet); fall back to the raw fields.
+      if (e.summary) { out.push('', e.summary); continue; }
       const size = [e.intensity, e.duration].filter(Boolean).join(', ').toLowerCase();
       out.push('', fmtDay(e.happenedAt) + ', ' + fmtTime(e.happenedAt) + ': ' + (e.what.join(', ') || label(e)) +
         (size ? ' (' + size + ')' : ''));
