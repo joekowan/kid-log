@@ -105,7 +105,6 @@
   .ev:first-child { border-top: 0; }
   .ev .s { color: var(--muted); font-size: 13px; }
   .copy { width: 100%; padding: 14px; border-radius: 12px; background: var(--chip); font-weight: 600; }
-  #copyText { margin-top: 10px; display: none; min-height: 200px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -128,8 +127,6 @@
 <section id="viewSum" style="display:none">
   <div class="chips" id="range" style="margin-bottom:14px"></div>
   <div id="summary"></div>
-  <button class="copy" onclick="copySummary()">Copy summary text for therapist</button>
-  <textarea id="copyText" readonly></textarea>
 </section>
 
 <div class="sheet" id="sheet"><div class="sheet-in">
@@ -429,41 +426,53 @@ function renderSummary() {
         e.notes ? el('div', {}, '“' + e.notes + '”') : null)));
     }
     if (!mine.length) card.append(el('p', { class: 'empty', style: 'padding:12px 0 0' }, 'Nothing logged in this range.'));
+    else card.append(el('button', { class: 'copy', style: 'margin-top:14px', onclick: () => shareSummary(kid) },
+      'Send ' + kid + '’s summary to therapist'));
     s.append(card);
   }
 }
 
-function summaryText() {
-  const list = inRange();
+// Plain text for one child, laid out to read well when pasted into a text or email.
+function summaryText(kid) {
+  const mine = inRange().filter(e => e.child === kid).slice().reverse();
+  const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
   const start = new Date(); start.setDate(start.getDate() - (range - 1));
-  const out = [];
-  for (const kid of CFG.kids) {
-    const mine = list.filter(e => e.child === kid).slice().reverse();
-    const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
-    out.push(kid.toUpperCase() + ': home log, ' + fmtDay(start.toISOString()) + ' to ' + fmtDay(new Date().toISOString()));
-    out.push(good.length + ' good moments, ' + hard.length + ' hard moments logged.');
-    const line = (t, rows) => rows.length && out.push(t + ': ' + rows.slice(0, 5).map(([k, v]) => k + ' (' + v + ')').join(', '));
-    line('Hard moments were mostly', tally(hard, 'what'));
-    line('Common triggers', tally(hard, 'triggers'));
-    line('What helped / what we tried', tally(hard, 'response'));
-    line('Time of day (hard)', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p'));
-    line('Good moments', tally(good, 'what'));
-    if (mine.length) out.push('', 'Log:');
-    for (const e of mine) {
-      out.push('- ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt) + ' · ' + (e.type === 'good' ? 'GOOD' : 'HARD') +
-        (summaryLine(e) ? ' · ' + summaryLine(e) : '') + (e.notes ? ' · "' + e.notes + '"' : ''));
+  const span = range === 1 ? fmtDay(start.toISOString()) : fmtDay(start.toISOString()) + ' to ' + fmtDay(new Date().toISOString());
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const list = rows => rows.slice(0, 5).map(([k, v]) => v > 1 ? k + ' (' + v + ')' : k).join(', ');
+  const out = [kid + ': home behavior log', span, '',
+    plural(good.length, 'good moment') + ', ' + plural(hard.length, 'hard moment') + ' logged.'];
+  const line = (t, rows) => { if (rows.length) out.push(t + ': ' + list(rows)); };
+  line('Hard moments were mostly', tally(hard, 'what'));
+  line('Common triggers', tally(hard, 'triggers'));
+  line('What we did / what helped', tally(hard, 'response'));
+  line('Hard moments by time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p'));
+  line('Good moments were mostly', tally(good, 'what'));
+  const block = (title, items) => {
+    if (!items.length) return;
+    out.push('', title.toUpperCase());
+    for (const e of items) {
+      const size = [e.intensity, e.duration].filter(Boolean).join(', ').toLowerCase();
+      out.push('', fmtDay(e.happenedAt) + ', ' + fmtTime(e.happenedAt) + ': ' + (e.what.join(', ') || label(e)) +
+        (size ? ' (' + size + ')' : ''));
+      if (e.triggers.length) out.push('Trigger: ' + e.triggers.join(', '));
+      if (e.response.length) out.push((e.type === 'good' ? 'We: ' : 'What we did: ') + e.response.join(', '));
+      if (e.notes) out.push('Notes: ' + e.notes);
     }
-    out.push('', '');
-  }
-  return out.join('\n').trim();
+  };
+  block('Hard moments', hard);
+  block('Good moments', good);
+  return out.join('\n');
 }
 
-async function copySummary() {
-  const text = summaryText();
-  const ta = document.getElementById('copyText');
-  ta.value = text; ta.style.display = 'block';
-  try { await navigator.clipboard.writeText(text); toast('Copied. Paste into a text or email'); }
-  catch (e) { ta.focus(); ta.select(); toast('Press and hold the text, then Copy'); }
+// iPhone share sheet when available (Messages, Mail, Notes), otherwise the clipboard.
+async function shareSummary(kid) {
+  const text = summaryText(kid);
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(text); toast('Copied ' + kid + '’s summary. Paste it into a text or email'); }
+  catch (e) { toast('Couldn’t copy on this device'); }
 }
 
 // ---------- tabs / boot ----------
