@@ -199,7 +199,8 @@ function call(fn, ...args) {
   const post = body => fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify(Object.assign({ k: KEY }, body)) });
   const req = { config: () => get({ action: 'config' }), getEntries: days => get({ action: 'entries', days }),
-    logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }) }[fn](...args);
+    logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }),
+    updateNotes: (id, notes) => post({ action: 'notes', id, notes }) }[fn](...args);
   return req.then(r => r.json()).then(d => {
     if (d && d.error) throw new Error(d.error);
     return fn === 'logEvent' ? d.id : fn === 'deleteEvent' ? d.ok : d;
@@ -258,6 +259,40 @@ function openSheet(child, type) {
   document.getElementById('bar').classList.add('open');
   document.getElementById('sheet').scrollTop = 0;
 }
+// Same sheet, with only the notes box, for fixing or adding to a saved entry.
+function openNotes(e) {
+  draft = { editId: e.id, notes: e.notes || '' };
+  const t = document.getElementById('sheetTitle');
+  t.textContent = 'Edit notes · ' + e.child + ' · ' + fmtDay(e.happenedAt);
+  t.className = 'title ' + e.type;
+  const btn = document.getElementById('saveBtn');
+  btn.className = 'save ' + e.type; btn.textContent = 'Save notes'; btn.disabled = false;
+  const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)', style: 'min-height:220px' });
+  ta.value = draft.notes;
+  ta.oninput = () => { draft.notes = ta.value; };
+  const f = document.getElementById('form');
+  f.innerHTML = '';
+  f.append(el('h3', {}, label(e) + ' · ' + fmtTime(e.happenedAt) + ' · by ' + e.by), ta,
+    el('p', { class: 'hint' }, 'Saving rewrites the Event Summary from these notes.'));
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('bar').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
+}
+async function saveNotes() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving and rewriting summary…';
+  const id = draft.editId, notes = draft.notes.trim();
+  try {
+    const d = await call('updateNotes', id, notes);
+    const e = cache.find(x => x.id === id);
+    if (e) { e.notes = notes; e.summary = d.summary || ''; }
+    closeSheet();
+    renderToday(); renderSummary();
+    toast(d.summary ? 'Notes and summary updated' : 'Notes saved. Summary updates in a few minutes');
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Didn’t save. Tap to try again';
+  }
+}
 function closeSheet() {
   document.getElementById('sheet').classList.remove('open');
   document.getElementById('bar').classList.remove('open');
@@ -315,6 +350,7 @@ function localInput(d) {
 
 async function save() {
   if (!draft) return;
+  if (draft.editId) { saveNotes(); return; }
   if (!who) { pickWho(); closeSheet(); toast('Pick who you are first'); return; }
   const btn = document.getElementById('saveBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
@@ -361,7 +397,8 @@ function renderToday() {
         el('div', { class: 't' }, e.child + ' · ' + label(e) + ' · ' + fmtTime(e.happenedAt)),
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
         e.notes ? el('div', { class: 's' }, '“' + e.notes + '”') : null,
-        el('div', { class: 's' }, 'by ' + e.by)),
+        el('div', { class: 's' }, 'by ' + e.by),
+        el('button', { class: 'x', style: 'padding-left:0', onclick: () => openNotes(e) }, 'Edit notes')),
       el('button', { class: 'x', onclick: ev => {
         // confirm() is blocked in the Apps Script sandbox, so the second tap confirms.
         const b = ev.currentTarget;
@@ -471,7 +508,9 @@ function renderSummary() {
         el('div', {}, el('span', { class: 'dot ' + e.type, style: 'display:inline-block;margin:0 6px 0 0' }),
           el('b', {}, label(e)), ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
         e.summary ? el('div', {}, summaryBody(e)) : e.notes ? el('div', {}, '“' + e.notes + '”') : null,
-        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null)));
+        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null,
+        el('button', { class: 'x', style: 'color:var(--muted);font-size:13px;padding:4px 0 0', onclick: () => openNotes(e) },
+          'Edit notes'))));
       const to = (CFG.therapists || {})[kid] || [];
       card.append(el('button', { class: 'copy main', style: 'margin-top:14px', onclick: () => emailSummary(kid) },
         to.length ? 'Email ' + kid + '’s therapists' : 'Email ' + kid + '’s summary'),
