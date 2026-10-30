@@ -70,7 +70,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { background: var(--chip); padding: 9px 13px; border-radius: 999px; font-size: 15px; }
   .chip.on { background: var(--chip-on); color: var(--chip-on-ink); }
-  textarea, input[type=datetime-local] { width: 100%; font: inherit; color: var(--ink); background: var(--card);
+  textarea, input[type=datetime-local], input[type=date] { width: 100%; font: inherit; color: var(--ink); background: var(--card);
     border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
   textarea { min-height: 96px; resize: vertical; }
   .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
@@ -105,6 +105,11 @@
   .ev:first-child { border-top: 0; }
   .ev .s { color: var(--muted); font-size: 13px; }
   .copy { width: 100%; padding: 14px; border-radius: 12px; background: var(--chip); font-weight: 600; }
+  .copy.main { background: var(--chip-on); color: var(--chip-on-ink); }
+  .dates { display: flex; gap: 10px; margin: -4px 0 14px; }
+  .dates label { flex: 1; font-size: 13px; color: var(--muted); }
+  .dates input { margin-top: 4px; padding: 10px; }
+  .span { font-size: 15px; font-weight: 600; margin: -4px 2px 12px; }
 </style>
 </head>
 <body>
@@ -126,6 +131,7 @@
 
 <section id="viewSum" style="display:none">
   <div class="chips" id="range" style="margin-bottom:14px"></div>
+  <div id="rangeDates"></div>
   <div id="summary"></div>
 </section>
 
@@ -171,7 +177,8 @@ const OPTIONS = {
 
 let who = store('who');
 let draft = null;
-let range = 7;
+let range = 'yesterday', rangeFrom, rangeTo; // the Summary's days, midnight to midnight, both inclusive
+let loadedDays = 14;
 let cache = [];
 
 // ---------- helpers ----------
@@ -375,20 +382,62 @@ function partOfDay(iso) {
   const h = new Date(iso).getHours();
   return h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : h < 20 ? 'Evening' : 'Bedtime / night';
 }
-function inRange() {
-  const cutoff = new Date(); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - (range - 1));
-  return cache.filter(e => new Date(e.happenedAt) >= cutoff);
+function midnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function dateInput(d) { return localInput(d).slice(0, 10); }
+function fmtLong(d) { return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); }
+const RANGES = [['yesterday', 'Yesterday', 1, 1], ['today', 'Today', 0, 0], ['week', 'Last 7 days', 6, 0], ['custom', 'Pick dates']];
+function setRange(key) {
+  range = key;
+  const r = RANGES.find(x => x[0] === key);
+  if (key !== 'custom') { rangeFrom = addDays(midnight(new Date()), -r[2]); rangeTo = addDays(midnight(new Date()), -r[3]); }
+  // The app loads 14 days; reach further back when the picked dates need it.
+  const need = Math.round((midnight(new Date()) - rangeFrom) / 86400000) + 1;
+  if (need > loadedDays) { loadedDays = need; refresh(); }
+  renderSummary();
 }
+function rangeDays() {
+  const days = [];
+  for (let d = rangeFrom; d <= rangeTo; d = addDays(d, 1)) days.push(d);
+  return days;
+}
+function spanText() {
+  return +rangeFrom === +rangeTo ? fmtLong(rangeFrom) : fmtLong(rangeFrom) + ' to ' + fmtLong(rangeTo);
+}
+function inRange() {
+  const end = addDays(rangeTo, 1);
+  return cache.filter(e => { const t = new Date(e.happenedAt); return t >= rangeFrom && t < end; });
+}
+// The Event Summary cell starts with its own date and time; the export shows those on their own line.
+function summaryBody(e) { return (e.summary || '').replace(/^[A-Z][a-z]{2} \d+\/\d+, \d+:\d+ [AP]M: /, ''); }
 
 function renderSummary() {
+  if (!rangeFrom) { setRange(range); return; }
   const r = document.getElementById('range');
   r.innerHTML = '';
-  for (const [n, txt] of [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']]) {
-    r.append(el('button', { class: 'chip' + (range === n ? ' on' : ''), onclick: () => { range = n; renderSummary(); } }, txt));
+  for (const [key, txt] of RANGES) {
+    r.append(el('button', { class: 'chip' + (range === key ? ' on' : ''), onclick: () => setRange(key) }, txt));
   }
+  const rd = document.getElementById('rangeDates');
+  rd.innerHTML = '';
+  if (range === 'custom') {
+    const today = dateInput(new Date());
+    const pick = (lbl, val, set) => {
+      const inp = el('input', { type: 'date', value: dateInput(val), max: today });
+      inp.onchange = () => {
+        if (!inp.value) return;
+        set(midnight(new Date(inp.value + 'T00:00')));
+        if (rangeFrom > rangeTo) [rangeFrom, rangeTo] = [rangeTo, rangeFrom];
+        setRange('custom');
+      };
+      return el('label', {}, lbl, inp);
+    };
+    rd.append(el('div', { class: 'dates' }, pick('From', rangeFrom, d => { rangeFrom = d; }), pick('To', rangeTo, d => { rangeTo = d; })));
+  } else rd.append(el('div', { class: 'span' }, spanText()));
   const s = document.getElementById('summary');
   s.innerHTML = '';
   const list = inRange();
+  const days = rangeDays();
   for (const kid of CFG.kids) {
     const mine = list.filter(e => e.child === kid);
     const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
@@ -396,9 +445,7 @@ function renderSummary() {
       el('div', { class: 'stats' },
         el('div', { class: 'stat good' }, el('b', {}, String(good.length)), 'good moments'),
         el('div', { class: 'stat hard' }, el('b', {}, String(hard.length)), 'hard moments')));
-    if (range > 1) {
-      const days = [];
-      for (let i = range - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+    if (days.length > 1 && days.length <= 31) {
       const max = Math.max(1, ...days.map(d => mine.filter(e => dayKey(new Date(e.happenedAt)) === dayKey(d)).length));
       card.append(el('h3', {}, 'By day'), el('div', { class: 'days' }, days.map(d => {
         const k = dayKey(d);
@@ -407,67 +454,78 @@ function renderSummary() {
         return el('div', { class: 'day', title: g + ' good, ' + h + ' hard' },
           g ? el('i', { class: 'g', style: 'height:' + (g / max * 100) + '%' }) : null,
           h ? el('i', { class: 'h', style: 'height:' + (h / max * 100) + '%' }) : null);
-      })), el('div', { class: 'daylbl' }, days.map(d => el('span', {}, range > 7
+      })), el('div', { class: 'daylbl' }, days.map(d => el('span', {}, days.length > 7
         ? String(d.getDate()) : d.toLocaleDateString([], { weekday: 'narrow' })))));
     }
     const sec = (title, rows) => rows.length ? [el('h3', {}, title),
       ...rows.slice(0, 6).map(([k, v]) => el('div', { class: 'tally' }, el('span', {}, k), el('span', {}, '×' + v)))] : [];
-    card.append(...sec('Hard moments: what happened', tally(hard, 'what')));
-    card.append(...sec('Hard moments: what set it off', tally(hard, 'triggers')));
-    card.append(...sec('Hard moments: what helped / what we tried', tally(hard, 'response')));
-    card.append(...sec('Hard moments: time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p')));
-    card.append(...sec('Good moments', tally(good, 'what')));
-    const withNotes = mine.filter(e => e.notes || e.type === 'hard');
-    if (withNotes.length) {
-      card.append(el('h3', {}, 'Details'), ...withNotes.slice(0, 25).map(e => el('div', { class: 'ev' },
-        el('div', {}, el('span', { class: 'dot ' + e.type, style: 'display:inline-block;margin:0 6px 0 0' }),
-          (e.type === 'good' ? 'Good' : 'Hard') + ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
-        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
-        e.notes ? el('div', {}, '“' + e.notes + '”') : null)));
+    if (mine.length > 2) {
+      card.append(...sec('Hard moments: what happened', tally(hard, 'what')));
+      card.append(...sec('Hard moments: what set it off', tally(hard, 'triggers')));
+      card.append(...sec('Hard moments: what helped / what we tried', tally(hard, 'response')));
+      card.append(...sec('Hard moments: time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p')));
+      card.append(...sec('Good moments', tally(good, 'what')));
     }
-    if (!mine.length) card.append(el('p', { class: 'empty', style: 'padding:12px 0 0' }, 'Nothing logged in this range.'));
-    else card.append(el('button', { class: 'copy', style: 'margin-top:14px', onclick: () => shareSummary(kid) },
-      'Send ' + kid + '’s summary to therapist'));
+    if (mine.length) {
+      card.append(el('h3', {}, 'Details'), ...mine.slice().reverse().slice(0, 40).map(e => el('div', { class: 'ev' },
+        el('div', {}, el('span', { class: 'dot ' + e.type, style: 'display:inline-block;margin:0 6px 0 0' }),
+          el('b', {}, label(e)), ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
+        e.summary ? el('div', {}, summaryBody(e)) : e.notes ? el('div', {}, '“' + e.notes + '”') : null,
+        summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null)));
+      const to = (CFG.therapists || {})[kid] || [];
+      card.append(el('button', { class: 'copy main', style: 'margin-top:14px', onclick: () => emailSummary(kid) },
+        to.length ? 'Email ' + kid + '’s therapists' : 'Email ' + kid + '’s summary'),
+        el('button', { class: 'copy', style: 'margin-top:8px', onclick: () => shareSummary(kid) }, 'Text or copy instead'));
+    } else card.append(el('p', { class: 'empty', style: 'padding:12px 0 0' }, 'Nothing logged on these days.'));
     s.append(card);
   }
 }
 
-// Plain text for one child, laid out to read well when pasted into a text or email.
+// Plain text for one child, laid out for a therapist reading it in an email or text:
+// counts first, then each moment in time order with the summary and the picked details on labeled lines.
 function summaryText(kid) {
   const mine = inRange().filter(e => e.child === kid).slice().reverse();
   const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
-  const start = new Date(); start.setDate(start.getDate() - (range - 1));
-  const span = range === 1 ? fmtDay(start.toISOString()) : fmtDay(start.toISOString()) + ' to ' + fmtDay(new Date().toISOString());
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   const list = rows => rows.slice(0, 5).map(([k, v]) => v > 1 ? k + ' (' + v + ')' : k).join(', ');
-  const out = [kid + ': home behavior log', span, '',
-    plural(good.length, 'good moment') + ', ' + plural(hard.length, 'hard moment') + ' logged.'];
-  const line = (t, rows) => { if (rows.length) out.push(t + ': ' + list(rows)); };
-  line('Hard moments were mostly', tally(hard, 'what'));
-  line('Common triggers', tally(hard, 'triggers'));
-  line('What we did / what helped', tally(hard, 'response'));
-  line('Hard moments by time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p'));
-  line('Good moments were mostly', tally(good, 'what'));
-  const block = (title, items) => {
-    if (!items.length) return;
-    out.push('', title.toUpperCase());
-    for (const e of items) {
-      // Prefer the Event Summary cell (written by Gemini, editable in the Sheet); fall back to the raw fields.
-      if (e.summary) { out.push('', e.summary); continue; }
-      const size = [e.intensity, e.duration].filter(Boolean).join(', ').toLowerCase();
-      out.push('', fmtDay(e.happenedAt) + ', ' + fmtTime(e.happenedAt) + ': ' + (e.what.join(', ') || label(e)) +
-        (size ? ' (' + size + ')' : ''));
-      if (e.triggers.length) out.push('Trigger: ' + e.triggers.join(', '));
-      if (e.response.length) out.push((e.type === 'good' ? 'We: ' : 'What we did: ') + e.response.join(', '));
-      if (e.notes) out.push('Notes: ' + e.notes);
-    }
-  };
-  block('Hard moments', hard);
-  block('Good moments', good);
+  const out = [kid + ' – home behavior log', spanText(), plural(hard.length, 'hard moment') + ', ' + plural(good.length, 'good moment')];
+  if (mine.length > 2) {
+    out.push('', 'AT A GLANCE');
+    const line = (t, rows) => { if (rows.length) out.push('• ' + t + ': ' + list(rows)); };
+    line('Hard moments were mostly', tally(hard, 'what'));
+    line('Common triggers', tally(hard, 'triggers'));
+    line('What we did', tally(hard, 'response'));
+    line('Time of day', tally(hard.map(e => ({ p: partOfDay(e.happenedAt) })), 'p'));
+    line('Good moments were mostly', tally(good, 'what'));
+  }
+  for (const e of mine) {
+    out.push('', '————————————', label(e).toUpperCase() + ' · ' + fmtLong(new Date(e.happenedAt)) + ' at ' + fmtTime(e.happenedAt), '');
+    // Prefer the Event Summary cell (written by Gemini, editable in the Sheet); fall back to the notes.
+    const body = summaryBody(e) || e.notes;
+    if (body) out.push(body, '');
+    const item = (t, v) => { if (v) out.push('• ' + t + ': ' + v); };
+    item('What happened', e.what.join(', '));
+    item('How big / how long', [e.intensity, e.duration].filter(Boolean).join(', '));
+    item('Set off by', e.triggers.join(', '));
+    item(e.type === 'good' ? 'How we responded' : 'What we did', e.response.join(', '));
+    item('Logged by', e.by);
+  }
   return out.join('\n');
 }
 
-// iPhone share sheet when available (Messages, Mail, Notes), otherwise the clipboard.
+// Opens a new email in the phone's mail app, addressed to the child's therapists, with the other parent copied.
+// A mailto link keeps the line breaks that Mail and Gmail lose from share-sheet text.
+function emailSummary(kid) {
+  const to = (CFG.therapists || {})[kid] || [];
+  const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a);
+  const subject = kid + ' – home behavior log, ' + spanText();
+  const q = [['subject', subject], ['body', summaryText(kid).replace(/\n/g, '\r\n')]];
+  if (cc.length) q.unshift(['cc', cc.join(',')]);
+  location.href = 'mailto:' + to.join(',') + '?' +
+    q.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+}
+
+// iPhone share sheet when available (Messages, Notes), otherwise the clipboard.
 async function shareSummary(kid) {
   const text = summaryText(kid);
   if (navigator.share) {
@@ -488,7 +546,7 @@ function showTab(t) {
 
 async function refresh() {
   try {
-    cache = await call('getEntries', 14);
+    cache = await call('getEntries', loadedDays);
     renderToday();
     if (document.getElementById('viewSum').style.display !== 'none') renderSummary();
   } catch (e) {
