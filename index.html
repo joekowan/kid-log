@@ -547,6 +547,14 @@ function renderSummary() {
     } else card.append(el('p', { class: 'empty', style: 'padding:12px 0 0' }, 'Nothing logged on these days.'));
     s.append(card);
   }
+  // One email to every child's therapists at once, with each child's section in turn.
+  if (CFG.kids.length > 1 && list.length) {
+    const names = CFG.kids.join(' & ');
+    s.append(el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, names),
+      el('p', { class: 's', style: 'margin:0' }, 'One email with both kids’ good and hard moments, to all of their therapists.'),
+      el('button', { class: 'copy main', style: 'margin-top:14px', onclick: () => emailSummary() }, 'Email all therapists'),
+      el('button', { class: 'copy', style: 'margin-top:8px', onclick: () => shareSummary() }, 'Text or copy instead')));
+  }
 }
 
 // Plain text for one child, laid out for a therapist reading it in an email or text:
@@ -583,23 +591,34 @@ function summaryText(kid) {
 
 // Opens a new email in the phone's mail app, addressed to the child's therapists, with the other parent copied.
 // A mailto link keeps the line breaks that Mail and Gmail lose from share-sheet text.
+// With no kid, it covers every child and goes to all of their therapists.
 function emailSummary(kid) {
-  const to = (CFG.therapists || {})[kid] || [];
+  const kids = kid ? [kid] : CFG.kids;
+  // Same person listed twice with and without a dot in the address counts once.
+  const seen = new Set(), to = [];
+  for (const k of kids) for (const a of (CFG.therapists || {})[k] || []) {
+    const id = a.toLowerCase().replace(/\.(?=[^@]*@)/g, '');
+    if (!seen.has(id)) { seen.add(id); to.push(a); }
+  }
   const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a);
-  const subject = kid + ' – home behavior log, ' + spanText();
-  const q = [['subject', subject], ['body', summaryText(kid).replace(/\n/g, '\r\n')]];
+  const subject = kids.join(' & ') + ' – home behavior log, ' + spanText();
+  const q = [['subject', subject], ['body', allText(kid).replace(/\n/g, '\r\n')]];
   if (cc.length) q.unshift(['cc', cc.join(',')]);
   location.href = 'mailto:' + to.join(',') + '?' +
     q.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 }
 
 // iPhone share sheet when available (Messages, Notes), otherwise the clipboard.
+function allText(kid) {
+  return kid ? summaryText(kid) : CFG.kids.map(summaryText).join('\n\n\n════════════════════\n\n');
+}
+
 async function shareSummary(kid) {
-  const text = summaryText(kid);
+  const text = allText(kid);
   if (navigator.share) {
     try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
-  try { await navigator.clipboard.writeText(text); toast('Copied ' + kid + '’s summary. Paste it into a text or email'); }
+  try { await navigator.clipboard.writeText(text); toast('Copied ' + (kid ? kid + '’s' : 'the') + ' summary. Paste it into a text or email'); }
   catch (e) { toast('Couldn’t copy on this device'); }
 }
 
