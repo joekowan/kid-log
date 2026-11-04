@@ -70,7 +70,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { background: var(--chip); padding: 9px 13px; border-radius: 999px; font-size: 15px; }
   .chip.on { background: var(--chip-on); color: var(--chip-on-ink); }
-  textarea, input[type=datetime-local], input[type=date] { width: 100%; font: inherit; color: var(--ink); background: var(--card);
+  textarea, input[type=datetime-local], input[type=date], input[type=text] { width: 100%; font: inherit; color: var(--ink); background: var(--card);
     border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
   textarea { min-height: 96px; resize: vertical; }
   .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
@@ -158,7 +158,7 @@ const OPTIONS = {
   when: ['Now', '15 min ago', '30 min ago', '1 hr ago', '2 hrs ago', 'Pick date & time'],
   good: {
     what: ['Kind to sibling', 'Followed directions', 'Used a coping skill', 'Calm through a transition',
-      'Handled "no" well', 'Helped out', 'Honest / owned it', 'Played well with others', 'Connected / good talk', 'Other'],
+      'Handled "no" well', 'Helped out', 'Honest / owned it', 'Played well with others', 'Connected / good talk'],
     response: ['Praised it', 'Reward / points', 'Quality time', 'Just noticed it'],
     responseLabel: 'How we responded',
   },
@@ -322,7 +322,8 @@ function renderForm() {
     inp.oninput = () => { draft.time = inp.value; };
     f.append(inp);
   }
-  f.append(...chipGroup('What happened', 'what', o.what, true));
+  f.append(...chipGroup('What happened', 'what', draft.type === 'good' ? goodLabels() : o.what, true));
+  if (draft.type === 'good') f.append(newLabel());
   const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)' });
   ta.value = notes;
   ta.oninput = () => { draft.notes = ta.value; };
@@ -333,6 +334,35 @@ function renderForm() {
     f.append(...chipGroup('What set it off', 'triggers', o.triggers, true));
   }
   f.append(...chipGroup(o.responseLabel, 'response', o.response, true));
+}
+
+// Good moments have no "Other": you type a new label instead. Labels typed before, on any phone,
+// come back as chips because they are read from the logged entries.
+function goodLabels() {
+  const std = OPTIONS.good.what, mine = [];
+  for (const e of cache) {
+    if (e.type !== 'good') continue;
+    for (const w of e.what) if (w && w !== 'Other' && !std.includes(w) && !mine.includes(w)) mine.push(w);
+  }
+  return std.concat(mine.slice(0, 8), draft.what.filter(w => !std.includes(w) && !mine.slice(0, 8).includes(w)));
+}
+function newLabel() {
+  if (!draft.adding) {
+    return el('div', { class: 'chips', style: 'margin-top:8px' }, el('button', { class: 'chip', onclick: () => {
+      draft.adding = true; renderForm(); document.getElementById('newLabel').focus();
+    } }, '+ New label'));
+  }
+  const inp = el('input', { type: 'text', id: 'newLabel', placeholder: 'e.g. Shared without being asked',
+    autocapitalize: 'sentences', style: 'flex:1;padding:10px' });
+  // Labels are stored comma-separated in the Sheet, so a comma would split one label in two.
+  const add = () => {
+    const v = inp.value.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+    draft.adding = false;
+    if (v && !draft.what.includes(v)) draft.what = draft.what.concat(v);
+    renderForm();
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') add(); };
+  return el('div', { style: 'display:flex;gap:8px;margin-top:8px' }, inp, el('button', { class: 'chip on', onclick: add }, 'Add'));
 }
 
 function happenedAt() {
