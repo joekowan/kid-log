@@ -507,7 +507,7 @@ function renderSummary() {
       card.append(el('h3', {}, 'Details'), ...mine.slice().reverse().slice(0, 40).map(e => el('div', { class: 'ev' },
         el('div', {}, el('span', { class: 'dot ' + e.type, style: 'display:inline-block;margin:0 6px 0 0' }),
           el('b', {}, label(e)), ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
-        e.summary ? el('div', {}, summaryBody(e)) : e.notes ? el('div', {}, '“' + e.notes + '”') : null,
+        e.notes ? el('div', {}, '“' + e.notes + '”') : e.summary ? el('div', {}, summaryBody(e)) : null,
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null,
         el('button', { class: 'x', style: 'color:var(--muted);font-size:13px;padding:4px 0 0', onclick: () => openNotes(e) },
           'Edit notes'))));
@@ -539,8 +539,8 @@ function summaryText(kid) {
   }
   for (const e of mine) {
     out.push('', '————————————', label(e).toUpperCase() + ' · ' + fmtLong(new Date(e.happenedAt)) + ' at ' + fmtTime(e.happenedAt), '');
-    // Prefer the Event Summary cell (written by Gemini, editable in the Sheet); fall back to the notes.
-    const body = summaryBody(e) || e.notes;
+    // The parent's own notes go out when there are any; the Event Summary (Gemini) covers entries without notes.
+    const body = e.notes || summaryBody(e);
     if (body) out.push(body, '');
     const item = (t, v) => { if (v) out.push('• ' + t + ': ' + v); };
     item('What happened', e.what.join(', '));
