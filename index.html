@@ -598,7 +598,11 @@ function emailSummary(kid) {
   const to = [...new Set(kids.flatMap(k => (CFG.therapists || {})[k] || []).map(a => a.toLowerCase()))].join(',');
   const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a).join(',');
   const subject = kids.join(' & ') + ' – home behavior log, ' + spanText();
-  const body = allText(kid);
+  const h = new Date().getHours();
+  const body = [h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,', '',
+    'Here’s what we logged at home for ' + kids.join(' and ') + ' (' + spanText() + ').', '',
+    allText(kid), '', '',
+    'Thank you, and please let us know if you have any questions.', '', who || ''].join('\n').trim();
   const qs = pairs => pairs.filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   location.href = 'googlegmail://co?' + qs([['to', to], ['cc', cc], ['subject', subject], ['body', body]]);
   const web = 'https://mail.google.com/mail/?' + qs([['authuser', (CFG.parents || {})[who]], ['view', 'cm'], ['fs', '1'],
