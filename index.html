@@ -589,23 +589,21 @@ function summaryText(kid) {
   return out.join('\n');
 }
 
-// Opens a new email in the phone's mail app, addressed to the child's therapists, with the other parent copied.
-// A mailto link keeps the line breaks that Mail and Gmail lose from share-sheet text.
+// Opens a new email addressed to the child's therapists, with the other parent copied.
+// It composes in the Gmail app rather than the phone's default mail app (a work account on Joe's phone);
+// if the Gmail app doesn't open, it falls back to Gmail on the web, signed in as this parent.
 // With no kid, it covers every child and goes to all of their therapists.
 function emailSummary(kid) {
   const kids = kid ? [kid] : CFG.kids;
-  // Same person listed twice with and without a dot in the address counts once.
-  const seen = new Set(), to = [];
-  for (const k of kids) for (const a of (CFG.therapists || {})[k] || []) {
-    const id = a.toLowerCase().replace(/\.(?=[^@]*@)/g, '');
-    if (!seen.has(id)) { seen.add(id); to.push(a); }
-  }
-  const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a);
+  const to = [...new Set(kids.flatMap(k => (CFG.therapists || {})[k] || []).map(a => a.toLowerCase()))].join(',');
+  const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a).join(',');
   const subject = kids.join(' & ') + ' – home behavior log, ' + spanText();
-  const q = [['subject', subject], ['body', allText(kid).replace(/\n/g, '\r\n')]];
-  if (cc.length) q.unshift(['cc', cc.join(',')]);
-  location.href = 'mailto:' + to.join(',') + '?' +
-    q.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  const body = allText(kid);
+  const qs = pairs => pairs.filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  location.href = 'googlegmail://co?' + qs([['to', to], ['cc', cc], ['subject', subject], ['body', body]]);
+  const web = 'https://mail.google.com/mail/?' + qs([['authuser', (CFG.parents || {})[who]], ['view', 'cm'], ['fs', '1'],
+    ['to', to], ['cc', cc], ['su', subject], ['body', body]]);
+  setTimeout(() => { if (document.visibilityState === 'visible') location.href = web; }, 1500);
 }
 
 // iPhone share sheet when available (Messages, Notes), otherwise the clipboard.
