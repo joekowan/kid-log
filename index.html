@@ -164,7 +164,7 @@ const OPTIONS = {
   },
   hard: {
     what: ['Meltdown / tantrum', 'Aggression (hit, kick, throw)', 'Refused / defiant', 'Yelling / mean words',
-      'Sibling conflict', 'Anxious / worried', 'Shut down / withdrawn', 'Unsafe behavior', 'Lying', 'Other'],
+      'Sibling conflict', 'Anxious / worried', 'Shut down / withdrawn', 'Unsafe behavior', 'Lying'],
     intensity: ['Mild', 'Moderate', 'Severe'],
     duration: ['Under 5 min', '5–15 min', '15–30 min', '30+ min'],
     triggers: ['Transition', 'Told "no"', 'Sibling', 'Screens ending', 'Homework', 'Morning routine',
@@ -322,8 +322,7 @@ function renderForm() {
     inp.oninput = () => { draft.time = inp.value; };
     f.append(inp);
   }
-  f.append(...chipGroup('What happened', 'what', draft.type === 'good' ? goodLabels() : o.what, true));
-  if (draft.type === 'good') f.append(newLabel());
+  f.append(...chipGroup('What happened', 'what', whatLabels(draft.type), true), newLabel());
   const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)' });
   ta.value = notes;
   ta.oninput = () => { draft.notes = ta.value; };
@@ -336,12 +335,12 @@ function renderForm() {
   f.append(...chipGroup(o.responseLabel, 'response', o.response, true));
 }
 
-// Good moments have no "Other": you type a new label instead. Labels typed before, on any phone,
-// come back as chips because they are read from the logged entries.
-function goodLabels() {
-  const std = OPTIONS.good.what, mine = [];
+// There is no "Other": you type a new label instead. Labels typed before, on any phone,
+// come back as chips (per good/hard) because they are read from the logged entries.
+function whatLabels(type) {
+  const std = OPTIONS[type].what, mine = [];
   for (const e of cache) {
-    if (e.type !== 'good') continue;
+    if (e.type !== type) continue;
     for (const w of e.what) if (w && w !== 'Other' && !std.includes(w) && !mine.includes(w)) mine.push(w);
   }
   return std.concat(mine.slice(0, 8), draft.what.filter(w => !std.includes(w) && !mine.slice(0, 8).includes(w)));
@@ -352,7 +351,7 @@ function newLabel() {
       draft.adding = true; renderForm(); document.getElementById('newLabel').focus();
     } }, '+ New label'));
   }
-  const inp = el('input', { type: 'text', id: 'newLabel', placeholder: 'e.g. Shared without being asked',
+  const inp = el('input', { type: 'text', id: 'newLabel', placeholder: draft.type === 'good' ? 'e.g. Shared without being asked' : 'e.g. Took food without asking',
     autocapitalize: 'sentences', style: 'flex:1;padding:10px' });
   // Labels are stored comma-separated in the Sheet, so a comma would split one label in two.
   const add = () => {
