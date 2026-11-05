@@ -110,6 +110,21 @@
   .dates label { flex: 1; font-size: 13px; color: var(--muted); }
   .dates input { margin-top: 4px; padding: 10px; }
   .span { font-size: 15px; font-weight: 600; margin: -4px 2px 12px; }
+
+  /* photos */
+  .pics { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .pic { position: relative; width: 72px; height: 72px; border-radius: 10px; overflow: hidden; background: var(--chip); flex: none; }
+  .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pic .del { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 14px; line-height: 22px; text-align: center; padding: 0; }
+  .pics.small .pic { width: 56px; height: 56px; }
+  .addpic { width: 72px; height: 72px; border-radius: 10px; border: 1.5px dashed var(--line); color: var(--muted);
+    display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; line-height: 1.2; }
+  .addpic input { display: none; }
+  .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 30; display: none;
+    align-items: center; justify-content: center; padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom); }
+  .viewer.open { display: flex; }
+  .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 </style>
 </head>
 <body>
@@ -143,6 +158,7 @@
   <div id="form"></div>
 </div></div>
 <div class="bar" id="bar"><button class="save" id="saveBtn" onclick="save()">Save</button></div>
+<div class="viewer" id="viewer" onclick="this.classList.remove('open')"><img id="viewerImg" alt=""></div>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
 
 <script>
@@ -200,10 +216,11 @@ function call(fn, ...args) {
     body: JSON.stringify(Object.assign({ k: KEY }, body)) });
   const req = { config: () => get({ action: 'config' }), getEntries: days => get({ action: 'entries', days }),
     logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }),
-    updateNotes: (id, notes) => post({ action: 'notes', id, notes }) }[fn](...args);
+    updateNotes: (id, notes, photos) => post({ action: 'notes', id, notes, photos }),
+    photo: id => get({ action: 'photo', id }) }[fn](...args);
   return req.then(r => r.json()).then(d => {
     if (d && d.error) throw new Error(d.error);
-    return fn === 'logEvent' ? d.id : fn === 'deleteEvent' ? d.ok : d;
+    return fn === 'deleteEvent' ? d.ok : d;
   });
 }
 function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -219,6 +236,67 @@ function toast(msg, undo) {
   document.getElementById('toast').classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => document.getElementById('toast').classList.remove('show'), 6000);
+}
+
+// ---------- photos ----------
+// Photos are shrunk on the phone (longest side 1600px, JPEG) before upload, then kept in a private Drive
+// folder; the app fetches them back through the API with the key. draft.photos holds {id} for saved
+// photos and {data} for new ones not uploaded yet.
+const PHOTO_MAX = 4;
+const photoCache = {};
+function photoSrc(id) {
+  if (!photoCache[id]) photoCache[id] = call('photo', id).then(d => 'data:' + d.type + ';base64,' + d.data)
+    .catch(err => { delete photoCache[id]; throw err; });
+  return photoCache[id];
+}
+function photoImg(p) {
+  const img = el('img', { alt: '' });
+  if (p.data) img.src = p.data; else photoSrc(p.id).then(src => { img.src = src; }).catch(() => {});
+  return img;
+}
+function showPhoto(p) {
+  const v = document.getElementById('viewerImg');
+  v.removeAttribute('src');
+  if (p.data) v.src = p.data; else photoSrc(p.id).then(src => { v.src = src; }).catch(() => toast('Couldn’t load that photo'));
+  document.getElementById('viewer').classList.add('open');
+}
+// Thumbnails for a saved entry (Today list and Summary details); tap one to see it full size.
+function entryPics(e) {
+  if (!e.photos || !e.photos.length) return null;
+  return el('div', { class: 'pics small' }, e.photos.map(id =>
+    el('button', { class: 'pic', onclick: () => showPhoto({ id }) }, photoImg({ id }))));
+}
+async function shrink(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  } finally { URL.revokeObjectURL(url); }
+}
+// The Photos section of the log and edit sheets. rerender redraws whichever sheet is open.
+function photoPicker(rerender) {
+  const box = el('div', { class: 'pics' }, draft.photos.map((p, i) => el('div', { class: 'pic' },
+    el('button', { style: 'width:100%;height:100%;padding:0', onclick: () => showPhoto(p) }, photoImg(p)),
+    el('button', { class: 'del', 'aria-label': 'Remove photo', onclick: () => {
+      draft.photos = draft.photos.filter((x, j) => j !== i); rerender();
+    } }, '×'))));
+  if (draft.photos.length < PHOTO_MAX) {
+    const inp = el('input', { type: 'file', accept: 'image/*', multiple: '' });
+    inp.onchange = async () => {
+      const files = [...inp.files].slice(0, PHOTO_MAX - draft.photos.length);
+      const d = draft;
+      for (const f of files) {
+        try { d.photos.push({ data: await shrink(f) }); } catch (err) { toast('Couldn’t read that photo'); }
+      }
+      if (draft === d) rerender();
+    };
+    box.append(el('label', { class: 'addpic' }, inp, '＋ Add photo'));
+  }
+  return [el('h3', {}, 'Photos'), box];
 }
 
 // ---------- who ----------
@@ -247,7 +325,7 @@ function renderGrid() {
 }
 
 function openSheet(child, type) {
-  draft = { child, type, when: 'Now', what: [], triggers: [], response: [], intensity: '', duration: '', notes: '', time: '' };
+  draft = { child, type, when: 'Now', what: [], triggers: [], response: [], intensity: '', duration: '', notes: '', time: '', photos: [] };
   const t = document.getElementById('sheetTitle');
   t.textContent = child + ' · ' + (type === 'good' ? 'Good moment' : 'Hard moment');
   t.className = 'title ' + type;
@@ -261,31 +339,38 @@ function openSheet(child, type) {
 }
 // Same sheet, with only the notes box, for fixing or adding to a saved entry.
 function openNotes(e) {
-  draft = { editId: e.id, notes: e.notes || '' };
+  draft = { editId: e.id, entry: e, notes: e.notes || '', photos: (e.photos || []).map(id => ({ id })) };
   const t = document.getElementById('sheetTitle');
-  t.textContent = 'Edit notes · ' + e.child + ' · ' + fmtDay(e.happenedAt);
+  t.textContent = 'Edit · ' + e.child + ' · ' + fmtDay(e.happenedAt);
   t.className = 'title ' + e.type;
   const btn = document.getElementById('saveBtn');
-  btn.className = 'save ' + e.type; btn.textContent = 'Save notes'; btn.disabled = false;
-  const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)', style: 'min-height:220px' });
+  btn.className = 'save ' + e.type; btn.textContent = 'Save'; btn.disabled = false;
+  renderNotesForm();
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('bar').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
+}
+function renderNotesForm() {
+  const e = draft.entry;
+  const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)', style: 'min-height:200px' });
   ta.value = draft.notes;
   ta.oninput = () => { draft.notes = ta.value; };
   const f = document.getElementById('form');
   f.innerHTML = '';
   f.append(el('h3', {}, label(e) + ' · ' + fmtTime(e.happenedAt) + ' · by ' + e.by), ta,
-    el('p', { class: 'hint' }, 'Saving rewrites the Event Summary from these notes.'));
-  document.getElementById('sheet').classList.add('open');
-  document.getElementById('bar').classList.add('open');
-  document.getElementById('sheet').scrollTop = 0;
+    el('p', { class: 'hint' }, 'Saving rewrites the Event Summary from these notes.'), ...photoPicker(renderNotesForm));
 }
 async function saveNotes() {
   const btn = document.getElementById('saveBtn');
   btn.disabled = true; btn.textContent = 'Saving and rewriting summary…';
   const id = draft.editId, notes = draft.notes.trim();
+  const add = draft.photos.filter(p => p.data);
+  const photos = { keep: draft.photos.filter(p => p.id).map(p => p.id), add: add.map(p => p.data) };
   try {
-    const d = await call('updateNotes', id, notes);
+    const d = await call('updateNotes', id, notes, photos);
     const e = cache.find(x => x.id === id);
-    if (e) { e.notes = notes; e.summary = d.summary || ''; }
+    if (d.photos) (d.photos.slice(photos.keep.length)).forEach((pid, i) => { if (add[i]) photoCache[pid] = Promise.resolve(add[i].data); });
+    if (e) { e.notes = notes; e.summary = d.summary || ''; if (d.photos) e.photos = d.photos; }
     closeSheet();
     renderToday(); renderSummary();
     toast(d.summary ? 'Notes and summary updated' : 'Notes saved. Summary updates in a few minutes');
@@ -326,7 +411,7 @@ function renderForm() {
   const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)' });
   ta.value = notes;
   ta.oninput = () => { draft.notes = ta.value; };
-  f.append(el('h3', {}, 'Notes'), ta);
+  f.append(el('h3', {}, 'Notes'), ta, ...photoPicker(renderForm));
   if (draft.type === 'hard') {
     f.append(...chipGroup('How big', 'intensity', o.intensity, false));
     f.append(...chipGroup('How long', 'duration', o.duration, false));
@@ -382,18 +467,22 @@ async function save() {
   if (draft.editId) { saveNotes(); return; }
   if (!who) { pickWho(); closeSheet(); toast('Pick who you are first'); return; }
   const btn = document.getElementById('saveBtn');
-  btn.disabled = true; btn.textContent = 'Saving…';
+  const pics = draft.photos.map(p => p.data);
+  btn.disabled = true; btn.textContent = pics.length ? 'Saving with photos…' : 'Saving…';
   const ev = { child: draft.child, type: draft.type, happenedAt: happenedAt().toISOString(), what: draft.what,
     intensity: draft.intensity, duration: draft.duration, triggers: draft.triggers, response: draft.response,
     notes: draft.notes.trim(), by: who };
   try {
-    const id = await call('logEvent', ev);
+    const d = await call('logEvent', Object.assign({ photos: pics }, ev));
+    const id = d.id;
+    (d.photos || []).forEach((pid, i) => { photoCache[pid] = Promise.resolve(pics[i]); });
     closeSheet();
-    cache.unshift(Object.assign({ id, loggedAt: new Date().toISOString() }, ev));
+    cache.unshift(Object.assign({ id, loggedAt: new Date().toISOString(), photos: d.photos || [] }, ev));
     cache.sort((a, b) => b.happenedAt.localeCompare(a.happenedAt));
     renderToday();
     const day = dayKey(new Date(ev.happenedAt)) === dayKey(new Date()) ? '' : ' for ' + fmtDay(ev.happenedAt);
-    toast('Saved ' + ev.child + ' · ' + label(ev) + day, () => remove(id));
+    if (d.photoError || (d.photos || []).length < pics.length) toast('Saved, but the photos didn’t upload. Add them with Edit');
+    else toast('Saved ' + ev.child + ' · ' + label(ev) + day, () => remove(id));
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Didn’t save. Tap to try again';
   }
@@ -426,8 +515,9 @@ function renderToday() {
         el('div', { class: 't' }, e.child + ' · ' + label(e) + ' · ' + fmtTime(e.happenedAt)),
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
         e.notes ? el('div', { class: 's' }, '“' + e.notes + '”') : null,
+        entryPics(e),
         el('div', { class: 's' }, 'by ' + e.by),
-        el('button', { class: 'x', style: 'padding-left:0', onclick: () => openNotes(e) }, 'Edit notes')),
+        el('button', { class: 'x', style: 'padding-left:0', onclick: () => openNotes(e) }, 'Edit notes or photos')),
       el('button', { class: 'x', onclick: ev => {
         // confirm() is blocked in the Apps Script sandbox, so the second tap confirms.
         const b = ev.currentTarget;
@@ -538,8 +628,9 @@ function renderSummary() {
           el('b', {}, label(e)), ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
         e.notes ? el('div', {}, '“' + e.notes + '”') : e.summary ? el('div', {}, summaryBody(e)) : null,
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null,
+        entryPics(e),
         el('button', { class: 'x', style: 'color:var(--muted);font-size:13px;padding:4px 0 0', onclick: () => openNotes(e) },
-          'Edit notes'))));
+          'Edit notes or photos'))));
       const to = (CFG.therapists || {})[kid] || [];
       card.append(el('button', { class: 'copy main', style: 'margin-top:14px', onclick: () => emailSummary(kid) },
         to.length ? 'Email ' + kid + '’s therapists' : 'Email ' + kid + '’s summary'),
