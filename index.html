@@ -193,7 +193,8 @@ const OPTIONS = {
 
 let who = store('who');
 let draft = null;
-let range = 'yesterday', rangeFrom, rangeTo; // the Summary's days, midnight to midnight, both inclusive
+// On Mondays the Summary starts on the weekend: Friday through this morning.
+let range = new Date().getDay() === 1 ? 'weekend' : 'yesterday', rangeFrom, rangeTo; // the Summary's days, midnight to midnight, both inclusive
 let loadedDays = 14;
 let cache = [];
 
@@ -543,7 +544,7 @@ function midnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; 
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function dateInput(d) { return localInput(d).slice(0, 10); }
 function fmtLong(d) { return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); }
-const RANGES = [['yesterday', 'Yesterday', 1, 1], ['today', 'Today', 0, 0], ['week', 'Last 7 days', 6, 0], ['custom', 'Pick dates']];
+const RANGES = [['weekend', 'Weekend', 3, 0], ['yesterday', 'Yesterday', 1, 1], ['today', 'Today', 0, 0], ['week', 'Last 7 days', 6, 0], ['custom', 'Pick dates']];
 function setRange(key) {
   range = key;
   const r = RANGES.find(x => x[0] === key);
@@ -573,6 +574,7 @@ function renderSummary() {
   const r = document.getElementById('range');
   r.innerHTML = '';
   for (const [key, txt] of RANGES) {
+    if (key === 'weekend' && new Date().getDay() !== 1 && range !== 'weekend') continue; // Mondays only
     r.append(el('button', { class: 'chip' + (range === key ? ' on' : ''), onclick: () => setRange(key) }, txt));
   }
   const rd = document.getElementById('rangeDates');
