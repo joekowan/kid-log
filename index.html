@@ -217,7 +217,8 @@ function call(fn, ...args) {
   const req = { config: () => get({ action: 'config' }), getEntries: days => get({ action: 'entries', days }),
     logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }),
     updateNotes: (id, notes, photos) => post({ action: 'notes', id, notes, photos }),
-    photo: id => get({ action: 'photo', id }) }[fn](...args);
+    photo: id => get({ action: 'photo', id }),
+    makeDraft: m => post(Object.assign({ action: 'draft' }, m)) }[fn](...args);
   return req.then(r => r.json()).then(d => {
     if (d && d.error) throw new Error(d.error);
     return fn === 'deleteEvent' ? d.ok : d;
@@ -650,7 +651,8 @@ function renderSummary() {
 
 // Plain text for one child, laid out for a therapist reading it in an email or text:
 // counts first, then each moment in time order with the summary and the picked details on labeled lines.
-function summaryText(kid) {
+// withPhotos adds a "[[photo:<id>]]" line per photo, which the Gmail draft turns into the picture itself.
+function summaryText(kid, withPhotos) {
   const mine = inRange().filter(e => e.child === kid).slice().reverse();
   const good = mine.filter(e => e.type === 'good'), hard = mine.filter(e => e.type === 'hard');
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
@@ -676,6 +678,7 @@ function summaryText(kid) {
     item('Set off by', e.triggers.join(', '));
     item(e.type === 'good' ? 'How we responded' : 'What we did', e.response.join(', '));
     item('Logged by', e.by);
+    if (withPhotos && e.photos && e.photos.length) out.push('', ...e.photos.map(id => '[[photo:' + id + ']]'));
   }
   return out.join('\n');
 }
@@ -683,8 +686,11 @@ function summaryText(kid) {
 // Opens a new email addressed to the child's therapists, with the other parent copied.
 // It composes in the Gmail app rather than the phone's default mail app (a work account on Joe's phone);
 // if the Gmail app doesn't open, it falls back to Gmail on the web, signed in as this parent.
+// When the days include photos and this is the account the script runs as, it makes a Gmail draft with the
+// photos in it instead (a compose link can't carry attachments), then opens Gmail to find it in Drafts.
 // With no kid, it covers every child and goes to all of their therapists.
-function emailSummary(kid) {
+let drafting = false;
+async function emailSummary(kid) {
   const kids = kid ? [kid] : CFG.kids;
   const to = [...new Set(kids.flatMap(k => (CFG.therapists || {})[k] || []).map(a => a.toLowerCase()))].join(',');
   const cc = Object.entries(CFG.parents || {}).filter(([n]) => n !== who).map(([, a]) => a).join(',');
@@ -692,18 +698,38 @@ function emailSummary(kid) {
   const h = new Date().getHours();
   const body = [h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,', '',
     'Here’s what we logged at home for ' + kids.join(' and ') + ' (' + spanText() + ').', '',
-    allText(kid), '', '',
+    '{{SUMMARY}}', '', '',
     'Thank you, and please let us know if you have any questions.', '', who || ''].join('\n').trim();
   const qs = pairs => pairs.filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
-  location.href = 'googlegmail://co?' + qs([['to', to], ['cc', cc], ['subject', subject], ['body', body]]);
-  const web = 'https://mail.google.com/mail/?' + qs([['authuser', (CFG.parents || {})[who]], ['view', 'cm'], ['fs', '1'],
-    ['to', to], ['cc', cc], ['su', subject], ['body', body]]);
-  setTimeout(() => { if (document.visibilityState === 'visible') location.href = web; }, 1500);
+  const me = (CFG.parents || {})[who];
+  const openGmail = (app, web) => {
+    location.href = app;
+    setTimeout(() => { if (document.visibilityState === 'visible') location.href = web; }, 1500);
+  };
+  const hasPhotos = inRange().some(e => kids.includes(e.child) && e.photos && e.photos.length);
+  if (hasPhotos && who && who === CFG.draftsFor) {
+    if (drafting) return;
+    drafting = true;
+    toast('Making the email with photos in Gmail…');
+    try {
+      const d = await call('makeDraft', { to, cc, subject, body: body.replace('{{SUMMARY}}', allText(kid, true)) });
+      toast('Draft ready with ' + d.photos + (d.photos === 1 ? ' photo' : ' photos') + '. Open Drafts in Gmail to review and send');
+      openGmail('googlegmail://', 'https://mail.google.com/mail/?' + qs([['authuser', me]]) + '#drafts');
+    } catch (err) {
+      toast('Couldn’t make the draft. Try again, or use Text or copy');
+    } finally { drafting = false; }
+    return;
+  }
+  const text = body.replace('{{SUMMARY}}', allText(kid));
+  openGmail('googlegmail://co?' + qs([['to', to], ['cc', cc], ['subject', subject], ['body', text]]),
+    'https://mail.google.com/mail/?' + qs([['authuser', me], ['view', 'cm'], ['fs', '1'],
+      ['to', to], ['cc', cc], ['su', subject], ['body', text]]));
 }
 
 // iPhone share sheet when available (Messages, Notes), otherwise the clipboard.
-function allText(kid) {
-  return kid ? summaryText(kid) : CFG.kids.map(summaryText).join('\n\n\n════════════════════\n\n');
+function allText(kid, withPhotos) {
+  return kid ? summaryText(kid, withPhotos)
+    : CFG.kids.map(k => summaryText(k, withPhotos)).join('\n\n\n════════════════════\n\n');
 }
 
 async function shareSummary(kid) {
