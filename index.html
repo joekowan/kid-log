@@ -121,6 +121,8 @@
   .addpic { width: 72px; height: 72px; border-radius: 10px; border: 1.5px dashed var(--line); color: var(--muted);
     display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; line-height: 1.2; }
   .addpic input { display: none; }
+  .vids { margin-top: 6px; font-size: 14px; }
+  .vids a { display: inline-block; margin: 2px 12px 2px 0; color: var(--ink, inherit); font-weight: 600; }
   .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 30; display: none;
     align-items: center; justify-content: center; padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom); }
   .viewer.open { display: flex; }
@@ -217,7 +219,7 @@ function call(fn, ...args) {
     body: JSON.stringify(Object.assign({ k: KEY }, body)) });
   const req = { config: () => get({ action: 'config' }), getEntries: days => get({ action: 'entries', days }),
     logEvent: ev => post({ action: 'log', ev }), deleteEvent: id => post({ action: 'delete', id }),
-    updateNotes: (id, notes, photos) => post({ action: 'notes', id, notes, photos }),
+    updateNotes: (id, notes, photos, videos) => post({ action: 'notes', id, notes, photos, videos }),
     photo: id => get({ action: 'photo', id }),
     makeDraft: m => post(Object.assign({ action: 'draft' }, m)) }[fn](...args);
   return req.then(r => r.json()).then(d => {
@@ -268,6 +270,25 @@ function entryPics(e) {
   return el('div', { class: 'pics small' }, e.photos.map(id =>
     el('button', { class: 'pic', onclick: () => showPhoto({ id }) }, photoImg({ id }))));
 }
+// ---------- video links ----------
+// Videos stay in the family's own Drive; an entry only keeps links to them, which go out in the emails.
+const VIDEO_MAX = 4;
+function videoLinks(s) {
+  return (String(s || '').match(/https:\/\/[^\s<>"]+/g) || []).filter(u => u.length <= 500).slice(0, VIDEO_MAX);
+}
+function entryVids(e) {
+  if (!e.videos || !e.videos.length) return null;
+  return el('div', { class: 'vids' }, e.videos.map((u, i) =>
+    el('a', { href: u, target: '_blank', rel: 'noopener' }, '▶ Video' + (e.videos.length > 1 ? ' ' + (i + 1) : ''))));
+}
+function videoField() {
+  const ta = el('textarea', { placeholder: 'Paste a Google Drive link to a video', rows: '2', style: 'min-height:0', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+  ta.value = draft.videos;
+  ta.oninput = () => { draft.videos = ta.value; };
+  return [el('h3', {}, 'Video link'), ta,
+    el('p', { class: 'hint' }, 'In Drive, share the video as “Anyone with the link” so the therapists can open it. Up to ' + VIDEO_MAX + ' links.')];
+}
+
 async function shrink(file) {
   const url = URL.createObjectURL(file);
   try {
@@ -327,7 +348,7 @@ function renderGrid() {
 }
 
 function openSheet(child, type) {
-  draft = { child, type, when: 'Now', what: [], triggers: [], response: [], intensity: '', duration: '', notes: '', time: '', photos: [] };
+  draft = { child, type, when: 'Now', what: [], triggers: [], response: [], intensity: '', duration: '', notes: '', time: '', photos: [], videos: '' };
   const t = document.getElementById('sheetTitle');
   t.textContent = child + ' · ' + (type === 'good' ? 'Good moment' : 'Hard moment');
   t.className = 'title ' + type;
@@ -341,7 +362,7 @@ function openSheet(child, type) {
 }
 // Same sheet, with only the notes box, for fixing or adding to a saved entry.
 function openNotes(e) {
-  draft = { editId: e.id, entry: e, notes: e.notes || '', photos: (e.photos || []).map(id => ({ id })) };
+  draft = { editId: e.id, entry: e, notes: e.notes || '', photos: (e.photos || []).map(id => ({ id })), videos: (e.videos || []).join('\n') };
   const t = document.getElementById('sheetTitle');
   t.textContent = 'Edit · ' + e.child + ' · ' + fmtDay(e.happenedAt);
   t.className = 'title ' + e.type;
@@ -360,7 +381,7 @@ function renderNotesForm() {
   const f = document.getElementById('form');
   f.innerHTML = '';
   f.append(el('h3', {}, label(e) + ' · ' + fmtTime(e.happenedAt) + ' · by ' + e.by), ta,
-    el('p', { class: 'hint' }, 'Saving rewrites the Event Summary from these notes.'), ...photoPicker(renderNotesForm));
+    el('p', { class: 'hint' }, 'Saving rewrites the Event Summary from these notes.'), ...photoPicker(renderNotesForm), ...videoField());
 }
 async function saveNotes() {
   const btn = document.getElementById('saveBtn');
@@ -369,10 +390,11 @@ async function saveNotes() {
   const add = draft.photos.filter(p => p.data);
   const photos = { keep: draft.photos.filter(p => p.id).map(p => p.id), add: add.map(p => p.data) };
   try {
-    const d = await call('updateNotes', id, notes, photos);
+    const videos = videoLinks(draft.videos);
+    const d = await call('updateNotes', id, notes, photos, videos);
     const e = cache.find(x => x.id === id);
     if (d.photos) (d.photos.slice(photos.keep.length)).forEach((pid, i) => { if (add[i]) photoCache[pid] = Promise.resolve(add[i].data); });
-    if (e) { e.notes = notes; e.summary = d.summary || ''; if (d.photos) e.photos = d.photos; }
+    if (e) { e.notes = notes; e.summary = d.summary || ''; if (d.photos) e.photos = d.photos; e.videos = d.videos || videos; }
     closeSheet();
     renderToday(); renderSummary();
     toast(d.summary ? 'Notes and summary updated' : 'Notes saved. Summary updates in a few minutes');
@@ -413,7 +435,7 @@ function renderForm() {
   const ta = el('textarea', { placeholder: 'Details, in your own words (tap 🎤 to dictate)' });
   ta.value = notes;
   ta.oninput = () => { draft.notes = ta.value; };
-  f.append(el('h3', {}, 'Notes'), ta, ...photoPicker(renderForm));
+  f.append(el('h3', {}, 'Notes'), ta, ...photoPicker(renderForm), ...videoField());
   if (draft.type === 'hard') {
     f.append(...chipGroup('How big', 'intensity', o.intensity, false));
     f.append(...chipGroup('How long', 'duration', o.duration, false));
@@ -473,7 +495,7 @@ async function save() {
   btn.disabled = true; btn.textContent = pics.length ? 'Saving with photos…' : 'Saving…';
   const ev = { child: draft.child, type: draft.type, happenedAt: happenedAt().toISOString(), what: draft.what,
     intensity: draft.intensity, duration: draft.duration, triggers: draft.triggers, response: draft.response,
-    notes: draft.notes.trim(), by: who };
+    notes: draft.notes.trim(), by: who, videos: videoLinks(draft.videos) };
   try {
     const d = await call('logEvent', Object.assign({ photos: pics }, ev));
     const id = d.id;
@@ -517,9 +539,9 @@ function renderToday() {
         el('div', { class: 't' }, e.child + ' · ' + label(e) + ' · ' + fmtTime(e.happenedAt)),
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e)) : null,
         e.notes ? el('div', { class: 's' }, '“' + e.notes + '”') : null,
-        entryPics(e),
+        entryPics(e), entryVids(e),
         el('div', { class: 's' }, 'by ' + e.by),
-        el('button', { class: 'x', style: 'padding-left:0', onclick: () => openNotes(e) }, 'Edit notes or photos')),
+        el('button', { class: 'x', style: 'padding-left:0', onclick: () => openNotes(e) }, 'Edit notes, photos or video')),
       el('button', { class: 'x', onclick: ev => {
         // confirm() is blocked in the Apps Script sandbox, so the second tap confirms.
         const b = ev.currentTarget;
@@ -631,9 +653,9 @@ function renderSummary() {
           el('b', {}, label(e)), ' · ' + fmtDay(e.happenedAt) + ' ' + fmtTime(e.happenedAt)),
         e.notes ? el('div', {}, '“' + e.notes + '”') : e.summary ? el('div', {}, summaryBody(e)) : null,
         summaryLine(e) ? el('div', { class: 's' }, summaryLine(e) + ' · by ' + e.by) : null,
-        entryPics(e),
+        entryPics(e), entryVids(e),
         el('button', { class: 'x', style: 'color:var(--muted);font-size:13px;padding:4px 0 0', onclick: () => openNotes(e) },
-          'Edit notes or photos'))));
+          'Edit notes, photos or video'))));
       const to = (CFG.therapists || {})[kid] || [];
       card.append(el('button', { class: 'copy main', style: 'margin-top:14px', onclick: () => emailSummary(kid) },
         to.length ? 'Email ' + kid + '’s therapists' : 'Email ' + kid + '’s summary'),
@@ -680,6 +702,7 @@ function summaryText(kid, withPhotos) {
     item('Set off by', e.triggers.join(', '));
     item(e.type === 'good' ? 'How we responded' : 'What we did', e.response.join(', '));
     item('Logged by', e.by);
+    (e.videos || []).forEach((u, i) => item('Video' + (e.videos.length > 1 ? ' ' + (i + 1) : ''), u));
     if (withPhotos && e.photos && e.photos.length) out.push('', ...e.photos.map(id => '[[photo:' + id + ']]'));
   }
   return out.join('\n');
